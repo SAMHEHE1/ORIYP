@@ -52,3 +52,5 @@ python-telegram-bot==20.7
 cloudscraper
 pycryptodome
 opencv-python
+pyrogram==2.0.106
+tgcrypto
