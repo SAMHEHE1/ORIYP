@@ -2,6 +2,7 @@ import asyncio
 import os
 import re
 import json
+import aiohttp
 from typing import Union
 
 import yt_dlp
@@ -12,12 +13,11 @@ from youtubesearchpython.__future__ import VideosSearch
 from PURVIMUSIC.utils.database import is_on_off
 from PURVIMUSIC.utils.formatters import time_to_seconds
 
-
-
 import os
 import glob
 import random
 import logging
+
 
 def cookie_txt_file():
     folder_path = f"{os.getcwd()}/cookies"
@@ -29,6 +29,35 @@ def cookie_txt_file():
     with open(filename, 'a') as file:
         file.write(f'Choosen File : {cookie_txt_file}\n')
     return f"""cookies/{str(cookie_txt_file).split("/")[-1]}"""
+
+
+YOUR_API_KEY = "30DxNexGenBotse4e2861"
+MUSIC_API_BASE_URL = "https://telegrammusicapi-df6f846abfd7.herokuapp.com/api"  
+
+async def get_audio_stream_from_api(query: str):
+    """Get audio stream URL from our Music Stream API with API key"""
+    try:
+        async with aiohttp.ClientSession() as session:
+            params = {
+                'query': query,
+                'api_key': YOUR_API_KEY
+            }
+            async with session.get(
+                f"{MUSIC_API_BASE_URL}/stream",
+                params=params,
+                timeout=aiohttp.ClientTimeout(total=30)
+            ) as response:
+                if response.status == 200:
+                    data = await response.json()
+                    return data.get('stream_url'), data.get('title', query)
+                else:
+                    logging.error(f"Music API failed with status: {response.status}")
+                    return None, None
+    except Exception as e:
+        logging.error(f"Error calling Music Stream API: {str(e)}")
+        return None, None
+
+
 
 
 
@@ -58,12 +87,12 @@ async def check_file_size(link):
     info = await get_format_info(link)
     if info is None:
         return None
-
+    
     formats = info.get('formats', [])
     if not formats:
         print("No formats found.")
         return None
-
+    
     total_size = parse_size(formats)
     return total_size
 
@@ -295,6 +324,36 @@ class YouTubeAPI:
     ) -> str:
         if videoid:
             link = self.base + link
+        
+        # For audio requests, use our Music Stream API
+        if not video and not songvideo:
+            try:
+                # Get title for API search
+                search_title = title
+                if not search_title:
+                    # Extract title from YouTube if not provided
+                    results = VideosSearch(link, limit=1)
+                    for result in (await results.next())["result"]:
+                        search_title = result["title"]
+                        break
+                
+                if search_title:
+                    logging.info(f"Searching Music API for: {search_title}")
+                    
+                    # Get stream URL from our API
+                    stream_url, api_title = await get_audio_stream_from_api(search_title)
+                    
+                    if stream_url:
+                        logging.info(f"Got audio stream from Music API: {api_title}")
+                        # Return the stream URL directly (no download needed)
+                        return stream_url, False  # False means direct streaming
+                    else:
+                        logging.warning("Music API failed, falling back to yt-dlp")
+                
+            except Exception as e:
+                logging.error(f"Music API error, falling back to yt-dlp: {str(e)}")
+        
+        # Fallback to original yt-dlp logic for video or if API fails
         loop = asyncio.get_running_loop()
         def audio_dl():
             ydl_optssx = {
